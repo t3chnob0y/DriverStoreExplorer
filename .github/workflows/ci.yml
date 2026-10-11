@@ -81,3 +81,25 @@ jobs:
         uses: nuget/setup-nuget@v2
 
       - name: Restore NuGet packages
+        run: nuget restore Rapr.sln
+
+      - name: Build
+        run: msbuild Rapr.sln /p:Configuration=Release /p:Platform="Any CPU" /v:minimal
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $vstest = Join-Path $vsPath "Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.exe"
+          & $vstest "RaprTests\bin\Release\Rapr.Tests.dll" /Logger:"trx;LogFileName=tests.trx" /ResultsDirectory:TestResults
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$results = Get-Content TestResults\tests.trx
+          if ([int]$results.TestRun.ResultSummary.Counters.executed -eq 0) {
+            throw "No tests were executed."
+          }
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: DriverStoreExplorer-v${{ steps.version.outputs.fullVersion }}-unsigned
+          path: Rapr/bin/Release/
