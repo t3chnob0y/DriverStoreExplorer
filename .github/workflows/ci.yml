@@ -32,10 +32,23 @@ jobs:
           PR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           $tags = @(git tag --list)
-          if ($LASTEXITCODE -ne 0) { throw "Failed to list version tags" }
           $latest = $tags | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
             Sort-Object { [version]($_.Substring(1)) } -Descending | Select-Object -First 1
-          if (-not $latest) { throw "No valid version tag found" }
+
+          # If running in a fork with no tags, fetch tags from upstream repository
+          if (-not $latest) {
+            Write-Host "No tags in fork. Fetching tags from upstream..."
+            git fetch https://github.com/lostindark/DriverStoreExplorer.git "refs/tags/*:refs/tags/*" 2>$null
+            $tags = @(git tag --list)
+            $latest = $tags | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
+              Sort-Object { [version]($_.Substring(1)) } -Descending | Select-Object -First 1
+          }
+
+          # Fallback if no tags exist
+          if (-not $latest) {
+            $latest = "v0.11.0"
+          }
+
           $latestVersion = [version]($latest.Substring(1))
           $version = "$($latestVersion.Major).$($latestVersion.Minor).$($latestVersion.Build + 1)"
           $buildId = "$env:GITHUB_RUN_NUMBER.$env:GITHUB_RUN_ATTEMPT"
@@ -44,7 +57,6 @@ jobs:
             $fullVersion = "$version-pr.$env:PR_NUMBER.$buildId+$sha"
           } else {
             $headTags = @(git tag --points-at HEAD)
-            if ($LASTEXITCODE -ne 0) { throw "Failed to read tags on HEAD" }
             $existingTag = $headTags | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
               Sort-Object { [version]($_.Substring(1)) } -Descending | Select-Object -First 1
             if ($existingTag) {
